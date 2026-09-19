@@ -1,0 +1,87 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  free-tests:
+    name: Free / offline / no-secret tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # No API key required for any of these. test_pubmed.py makes real
+      # NETWORK calls to NCBI's E-utilities (no secret needed — NCBI_EMAIL
+      # just identifies the caller) rather than billed calls, so it stays
+      # in this job rather than live-tests, which is split by COST/secret
+      # requirement, not by "hits the network at all." test_loaders.py and
+      # test_pipeline.py use the real sample_data PDFs (checked into the
+      # repo) with a fake embeddings double, not the real biomedical model
+      # — keeps this job fast; the real model is only exercised in
+      # live-tests (test_retrieval.py, test_agent.py), where its download
+      # is a real, but non-billed, cost.
+      - name: Run offline / no-secret test suite
+        run: |
+          python test_loaders.py
+          python test_metadata.py
+          python test_chunking.py
+          python test_tracker.py
+          python test_pipeline.py
+          python test_storage.py
+          python test_guideline_versioning.py
+          python test_evidence_ranker.py
+          python test_confidence.py
+          python test_reranker.py
+          python test_image_captioner.py
+          python test_pubmed.py
+
+  live-tests:
+    name: Live tests (real OpenAI / Cohere calls, real embedding model)
+    runs-on: ubuntu-latest
+    # test_retrieval.py and test_agent.py load the real local biomedical
+    # embedding model (free, but a real ~400MB download — no secret
+    # needed for that part) AND make real, billed OpenAI calls for
+    # classification/routing/synthesis. Gated behind an OPENAI_API_KEY
+    # repository secret so a fork's CI run doesn't silently spend the
+    # repo owner's OpenAI budget; without it, this job's real step is
+    # skipped cleanly. A COHERE_API_KEY secret is optional — its absence
+    # just means reranking falls back to plain RRF order, same
+    # degrade-gracefully behavior the app itself has.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check for OPENAI_API_KEY secret
+        id: check_key
+        run: echo "has_key=${{ secrets.OPENAI_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Run live test suite (real OpenAI calls, real embedding model)
+        if: steps.check_key.outputs.has_key == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
+          API_KEY: ci-placeholder-key
+        run: |
+          python test_retrieval.py
+          python test_agent.py
+
+      - name: Skip notice
+        if: steps.check_key.outputs.has_key != 'true'
+        run: echo "OPENAI_API_KEY secret not set — skipping live tests. See job description."

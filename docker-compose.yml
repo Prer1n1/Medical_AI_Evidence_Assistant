@@ -1,0 +1,14 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    # Secrets injected at RUN time from .env, never baked into the image.
+    env_file:
+      - .env
+    # Bind mount, not a named Docker volume — same "browsable from the
+    # host while learning/demoing" tradeoff enterprise-agentic-rag made.
+    volumes:
+      - ./storage:/app/storage
+      - ./sample_data:/app/sample_data
+      - ./uploads:/app/uploads

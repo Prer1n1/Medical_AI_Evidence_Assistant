@@ -1,0 +1,20 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.git/
+# Only the GENERATED data artifacts under storage/ — not storage/*.py.
+# Real bug found running `docker compose build`: an earlier version of
+# this file excluded the whole storage/ directory, which also excluded
+# storage/vector_store.py and storage/chunk_store.py (real source code the
+# Dockerfile's pre-warm layer explicitly COPYs) — the build failed with
+# "storage/vector_store.py: not found". Scoped to the actual data
+# subpaths below, matching storage/.gitignore's equivalent entries.
+storage/chroma_db/
+storage/chunk_store.db
+storage/ingestion_manifest.db
+storage/pubmed_synced.db
+storage/images/
+uploads/
+sample_data/
+test_data/
