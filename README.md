@@ -4,8 +4,6 @@ A medical evidence assistant that retrieves grounded, cited answers from researc
 
 An LLM router decides which clinical categories are relevant to a question, queries them **in parallel** via a LangGraph workflow, then synthesizes one grounded answer with medical-format citations (PMID/journal or guideline name+version), an **evidence level** per source, and an overall **confidence score** — all explainable, not a single opaque relevance number.
 
-Sibling project: [`enterprise-agentic-rag`](../enterprise-agentic-rag) — shares its proven storage/retrieval/agent/API architecture; this project's ingestion and evidence layer are rebuilt from scratch for medical documents. See [docs/design-decisions.md](docs/design-decisions.md) for the full reasoning log, including what's ported, what's new, and real bugs found while building it.
-
 ## Architecture
 
 ```
