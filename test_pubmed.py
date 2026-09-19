@@ -9,6 +9,7 @@ docs/design-decisions.md ("PubMed connector") for why this distinction
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 
 import config  # noqa: F401 — loads .env (NCBI_EMAIL) into os.environ
@@ -59,7 +60,17 @@ def test_incremental_sync_skips_already_synced():
 
 
 if __name__ == "__main__":
+    # A 1s pause between each real call to NCBI — defense in depth on top
+    # of _get()'s 429 retry fix (ingestion/connectors/pubmed.py). Real bug
+    # found via GitHub Actions CI: this file alone makes ~9 real requests
+    # within a couple seconds, and GitHub-hosted runners share IP ranges
+    # across thousands of unrelated CI jobs, hitting NCBI's per-IP rate
+    # limit far more easily than a single script running on its own ever
+    # would locally. Spacing requests out reduces how often the retry
+    # logic even needs to engage in the first place.
     test_search_and_fetch_real_records()
+    time.sleep(1)
     test_record_to_document_shape()
+    time.sleep(1)
     test_incremental_sync_skips_already_synced()
     print("All test_pubmed.py checks passed.")

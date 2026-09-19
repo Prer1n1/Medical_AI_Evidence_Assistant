@@ -84,11 +84,17 @@ retry_cohere_call = retry(
     before_sleep=_log_retry,
 )
 
-# Same shape again, scoped to NCBI E-utilities' transient failure modes.
+# More attempts and a longer max wait than the OpenAI/Cohere policies —
+# real finding from GitHub Actions CI: NCBI's per-IP rate limit (429) is
+# hit far more easily from a shared CI runner IP (many unrelated repos'
+# jobs share Microsoft/GitHub's IP ranges) than from a home connection,
+# and NCBI's rate-limit window didn't clear within 3 attempts / 10s max
+# backoff. 5 attempts up to 30s gives real headroom to actually recover
+# instead of just retrying into the same still-rate-limited window.
 retry_ncbi_call = retry(
     retry=retry_if_exception_type(_TRANSIENT_NCBI_ERRORS),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=1, max=30),
     reraise=True,
     before_sleep=_log_retry,
 )

@@ -61,6 +61,13 @@ Quick reference for every real technical choice in this project. Format: what, w
 
 **Verified against real, current PubMed data** (not a fixture/mock): `search_pubmed("hypertension randomized controlled trial")` returned real, current PMIDs with real titles, DOIs, journals, and publication types — e.g. a real September 2026 network meta-analysis on resistant hypertension therapies.
 
+**Real bug found by GitHub Actions CI, not caught locally: `_get()` didn't treat NCBI's 429 (rate limit) as retryable.**
+- What happened: `test_pubmed.py` passed every time it ran locally, but failed on its first real GitHub Actions run with `requests.exceptions.HTTPError: 429 Client Error: Too Many Requests`.
+- Root cause, found from the real CI traceback (GitHub's log-download API requires repo admin access, so the user had to copy-paste it manually — noted for future reference): `_get()` only converted 5xx responses into the retryable `NCBITransientError`; everything else, including 429, fell through to `response.raise_for_status()` as if it were a non-retryable client mistake (a malformed query, a bad PMID). 429 specifically means "you're going too fast" — the textbook definition of a transient, retry-worthy error — conflated here with genuinely permanent 4xx errors.
+- Why this never surfaced locally: GitHub-hosted runners share IP address ranges across thousands of unrelated repos' CI jobs running concurrently, so NCBI's PER-IP rate limit gets hit far more easily from a shared CI IP than from one developer's home connection making the same number of calls.
+- Fix: `429` now raises `NCBITransientError` (joining the 5xx path), honoring NCBI's `Retry-After` header when present before the next attempt. `retry_ncbi_call`'s own policy was also widened (3 attempts/10s max -> 5 attempts/30s max) specifically for NCBI, since the observed real-world rate-limit window didn't clear within the original budget. `test_pubmed.py` additionally spaces its three real NCBI-calling test functions 1s apart as defense in depth, reducing how often the retry path needs to engage at all.
+- Verified locally post-fix (re-running against the live API, same as before) — same discipline as every other fix in this log: fixed, not just reasoned about.
+
 ---
 
 ## Storage: local biomedical embeddings, not OpenAI

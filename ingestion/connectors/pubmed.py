@@ -24,6 +24,7 @@ of ingestion/tracker.py's content-hash tracking for local files.
 from __future__ import annotations
 
 import sqlite3
+import time
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -107,13 +108,30 @@ def _base_params() -> dict:
 
 @retry_ncbi_call
 def _get(url: str, params: dict) -> requests.Response:
+    """Real bug found via GitHub Actions CI (not caught locally — a home
+    connection rarely hits NCBI's rate limit, but GitHub-hosted runners
+    share IP ranges across thousands of unrelated CI jobs, which trips it
+    far more easily): a 429 was falling through to `raise_for_status()`
+    as if it were a non-retryable client error like a malformed query.
+    429 specifically means "you're going too fast," which is the textbook
+    definition of transient — it needed to join 5xx errors as a
+    NCBITransientError, not be treated the same as a genuine 400/404.
+    When NCBI sends a Retry-After header, honor it (it knows its own
+    rate-limit window better than a blind exponential backoff does);
+    otherwise fall back to retry_ncbi_call's normal exponential wait.
+    """
     try:
         response = requests.get(url, params=params, timeout=_REQUEST_TIMEOUT)
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         raise  # already a type retry_ncbi_call retries on
+    if response.status_code == 429:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after and retry_after.isdigit():
+            time.sleep(int(retry_after))
+        raise NCBITransientError(f"NCBI rate limit (429) for {url}")
     if response.status_code >= 500:
         raise NCBITransientError(f"NCBI returned {response.status_code} for {url}")
-    response.raise_for_status()  # a 4xx here is a real, non-retryable error (bad query, etc.)
+    response.raise_for_status()  # a genuine 4xx here (bad query, etc.) is real and non-retryable
     return response
 
 
